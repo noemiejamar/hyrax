@@ -74,7 +74,6 @@ require 'byebug' unless ci_build?
 require 'hyrax/specs/shared_specs/factories/strategies/json_strategy'
 require 'hyrax/specs/shared_specs/factories/strategies/valkyrie_resource'
 FactoryBot.register_strategy(:valkyrie_create, ValkyrieCreateStrategy)
-FactoryBot.register_strategy(:create_using_test_adapter, ValkyrieTestAdapterCreateStrategy)
 FactoryBot.register_strategy(:json, JsonStrategy)
 FactoryBot.definition_file_paths = [File.expand_path("../factories", __FILE__)]
 FactoryBot.find_definitions
@@ -91,10 +90,12 @@ end
 query_registration_target =
   Valkyrie::MetadataAdapter.find(:test_adapter).query_service.custom_queries
 [Hyrax::CustomQueries::Navigators::CollectionMembers,
+ Hyrax::CustomQueries::Navigators::ChildFilesetsNavigator,
  Hyrax::CustomQueries::Navigators::ChildWorksNavigator,
  Hyrax::CustomQueries::FindAccessControl,
  Hyrax::CustomQueries::FindCollectionsByType,
  Hyrax::CustomQueries::FindManyByAlternateIds,
+ Hyrax::CustomQueries::FindIdsByModel,
  Hyrax::CustomQueries::FindFileMetadata,
  Hyrax::CustomQueries::Navigators::FindFiles].each do |handler|
   query_registration_target.register_query_handler(handler)

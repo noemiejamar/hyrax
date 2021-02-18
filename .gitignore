@@ -4,7 +4,6 @@
 ruby-version
 ruby-gemset
 .rvmrc
-Gemfile.lock
 
 # don't push around data files (for dev envs only)
 fcrepo4-data

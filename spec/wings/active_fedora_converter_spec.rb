@@ -75,6 +75,10 @@ RSpec.describe Wings::ActiveFedoraConverter, :clean_repo do
           .to have_attributes(title: ['comet in moominland'], distant_relation: ['Snufkin'])
       end
 
+      it 'supports indexing' do
+        expect(converter.convert.indexing_service).to be_a Hyrax::ValkyrieIndexer
+      end
+
       it 'does not add superflous metadata'
       it 'converts single-valued fields'
       it 'supports nested resources'
@@ -97,14 +101,14 @@ RSpec.describe Wings::ActiveFedoraConverter, :clean_repo do
     end
 
     context 'when given a valkyrie Work' do
-      let(:resource) { FactoryBot.valkyrie_create(:hyrax_work) }
+      let(:resource) { FactoryBot.build(:hyrax_work) }
 
       it 'gives a work' do
         expect(converter.convert).to be_work
       end
 
       context 'with members' do
-        let(:resource)   { FactoryBot.valkyrie_create(:hyrax_work, :with_member_works) }
+        let(:resource)   { FactoryBot.build(:hyrax_work, :with_member_works) }
         let(:member_ids) { resource.member_ids.map(&:id) }
 
         it 'saves members' do
@@ -116,6 +120,50 @@ RSpec.describe Wings::ActiveFedoraConverter, :clean_repo do
           expect(converter.convert.members)
             .to contain_exactly(an_instance_of(Hyrax::Test::SimpleWorkLegacy),
                                 an_instance_of(Hyrax::Test::SimpleWorkLegacy))
+        end
+      end
+
+      context 'with a custom, unmapped resource class' do
+        let(:resource) { Hyrax::Test::Converter::Resource.new }
+
+        before do
+          module Hyrax::Test
+            module Converter
+              class Resource < Valkyrie::Resource
+                attribute :member_ids, Valkyrie::Types::Array.of(Valkyrie::Types::ID)
+              end
+            end
+          end
+        end
+
+        after { Hyrax::Test.send(:remove_const, :Converter) }
+
+        context 'and no members' do
+          it 'converts empty membership' do
+            expect(converter.convert).to have_attributes member_ids: be_empty
+          end
+        end
+
+        context 'and member ids' do
+          let(:resource) { Hyrax::Test::Converter::Resource.new(member_ids: member_ids) }
+          let(:member_ids) { members.map { |m| m.id.id } }
+
+          let(:members) do
+            [FactoryBot.valkyrie_create(:hyrax_work),
+             FactoryBot.valkyrie_create(:hyrax_work)]
+          end
+
+          it 'converts membership' do
+            expect(converter.convert).to have_attributes member_ids: contain_exactly(*member_ids)
+          end
+
+          it 'deletes membership' do
+            saved = Wings::Valkyrie::MetadataAdapter.new.persister.save(resource: resource)
+            saved.member_ids = []
+
+            expect(described_class.convert(resource: saved).ordered_members.to_a).to be_empty
+            expect(described_class.convert(resource: saved).members).to be_empty
+          end
         end
       end
 
@@ -176,6 +224,62 @@ RSpec.describe Wings::ActiveFedoraConverter, :clean_repo do
       end
 
       it 'populates reflections'
+    end
+
+    context 'with a file set' do
+      let(:resource) { FactoryBot.build(:hyrax_file_set) }
+
+      it 'is a FileSet' do
+        expect(converter.convert).to be_a FileSet
+      end
+
+      context 'with file metadata' do
+        let(:resource) { FactoryBot.build(:hyrax_file_set, :with_files) }
+
+        it 'persists the files'
+      end
+    end
+
+    context 'with file metadata' do
+      let(:resource) { FactoryBot.build(:hyrax_file_metadata, line_count: 17_426, duration: 'thousands of years') }
+
+      it 'converts to a PCDM::File' do
+        expect(converter.convert).to be_a Hydra::PCDM::File
+      end
+
+      it 'converts file metadata' do
+        expect(converter.convert)
+          .to have_attributes line_count: [17_426], duration: ['thousands of years']
+      end
+
+      context 'when there is already an AF::File' do
+        let(:resource) { FactoryBot.build(:hyrax_file_metadata, id: file.id, bit_rate: ['300 Mbit/s']) }
+
+        let(:file) do
+          Hydra::PCDM::File.new.tap do |f|
+            f.content = 'a file'
+            f.bit_rate = ['90 bpm']
+            f.save
+          end
+        end
+
+        let(:custom_type) { ::RDF::URI.new('http://example.com/MyType') }
+
+        it 'converts with correct id' do
+          expect(converter.convert).to have_attributes id: file.id
+        end
+
+        it 'converts with existing content & updates metadata attributes' do
+          expect(converter.convert)
+            .to have_attributes content: 'a file', bit_rate: ['300 Mbit/s']
+        end
+
+        it 'converts pcdm use URIs as types' do
+          expect { resource.type = custom_type }
+            .to change { converter.convert.metadata_node.type }
+            .to contain_exactly(custom_type)
+        end
+      end
     end
 
     context 'with an embargo' do
@@ -336,9 +440,8 @@ RSpec.describe Wings::ActiveFedoraConverter, :clean_repo do
     end
 
     context 'with relationships' do
-      subject(:factory) { Wings::ModelTransformer.new(pcdm_object: pcdm_object) }
-
-      let(:resource) { subject.build }
+      let(:factory) { Wings::ModelTransformer.new(pcdm_object: pcdm_object) }
+      let(:resource) { factory.build }
 
       context 'for member_of_collections' do
         let(:pcdm_object) { collection1 }
@@ -353,16 +456,17 @@ RSpec.describe Wings::ActiveFedoraConverter, :clean_repo do
         end
 
         it 'converts member_of_collection_ids back to af_object' do
-          expect(converter.convert.member_of_collections.map(&:id)).to match_array [collection2.id, collection3.id]
+          expect(converter.convert.member_of_collections.map(&:id))
+            .to match_array [collection2.id, collection3.id]
         end
       end
 
       context 'for members' do
         let(:pcdm_object) { work1 }
 
-        let(:work1)       { build(:work, id: 'wk1', title: ['Work 1']) }
-        let(:work2)       { build(:work, id: 'wk2', title: ['Work 2']) }
-        let(:work3)       { build(:work, id: 'wk3', title: ['Work 3']) }
+        let(:work1) { build(:work, id: 'wk1', title: ['Work 1']) }
+        let(:work2) { build(:work, id: 'wk2', title: ['Work 2']) }
+        let(:work3) { build(:work, id: 'wk3', title: ['Work 3']) }
 
         before do
           work1.ordered_members = [work2, work3]
@@ -384,15 +488,14 @@ RSpec.describe Wings::ActiveFedoraConverter, :clean_repo do
         let(:fileset1) { create(:file_set) }
         let(:file_id) { fileset1.original_file.id }
 
-        before do
+        it 'has same original_file id as valkyrie resource' do
           binary = StringIO.new("hey")
           Hydra::Works::AddFileToFileSet.call(fileset1, binary, :original_file)
           expect(fileset1.original_file).not_to be_nil
           expect(resource.original_file_ids.first.to_s).to eq file_id
-        end
 
-        it 'has same original_file id as valkyrie resource' do
           converted_file_set = converter.convert
+
           expect(converted_file_set.original_file).not_to be_nil
           expect(converted_file_set.original_file.id).to eq file_id
         end

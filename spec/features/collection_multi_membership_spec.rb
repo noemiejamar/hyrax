@@ -1,5 +1,5 @@
 # frozen_string_literal: true
-RSpec.describe 'Adding a work to multiple collections', type: :feature, clean_repo: true, js: true do
+RSpec.describe 'Adding a work to multiple collections', type: :feature, js: true do
   include Selectors::Dashboard
   let(:admin_user) { create(:admin, email: 'admin@example.com') }
   let(:single_membership_type_1) { create(:collection_type, :not_allow_multiple_membership, title: 'Single-membership 1') }
@@ -12,19 +12,17 @@ RSpec.describe 'Adding a work to multiple collections', type: :feature, clean_re
   end
 
   describe 'when both collections support multiple membership' do
-    let(:old_collection) { build(:collection_lw, user: admin_user, collection_type_gid: multi_membership_type_1.gid, title: ['OldCollectionTitle']) }
+    let(:old_collection) { FactoryBot.build(:collection_lw, user: admin_user, collection_type: multi_membership_type_1, title: ['OldCollectionTitle']) }
     let!(:work) { create(:generic_work, user: admin_user, member_of_collections: [old_collection], title: ['The highly valued work that everyone wants in their collection']) }
 
     context 'and are of different types' do
-      let!(:new_collection) { create(:collection_lw, user: admin_user, collection_type_gid: multi_membership_type_2.gid, title: ['NewCollectionTitle']) }
+      let!(:new_collection) { FactoryBot.create(:collection_lw, user: admin_user, collection_type: multi_membership_type_2, title: ['NewCollectionTitle']) }
 
       it 'then the work is added to both collections' do
-        optional 'ability to get capybara to find css select2-result (see Issue #3038)' if ci_build?
         # Add to second multi-membership collection of a different type
         visit '/dashboard/my/works'
         check 'check_all'
         click_button 'Add to collection' # opens the modal
-        sleep 5
         select_member_of_collection(new_collection)
         click_button 'Save changes'
 
@@ -37,10 +35,9 @@ RSpec.describe 'Adding a work to multiple collections', type: :feature, clean_re
     end
 
     context 'and are of the same type' do
-      let!(:new_collection) { create(:collection_lw, user: admin_user, collection_type_gid: multi_membership_type_1.gid, title: ['NewCollectionTitle']) }
+      let!(:new_collection) { FactoryBot.create(:collection_lw, user: admin_user, collection_type: multi_membership_type_1, title: ['NewCollectionTitle']) }
 
       it 'then the work is added to both collections' do
-        optional 'ability to get capybara to find css select2-result (see Issue #3038)' if ci_build?
         # Add to second multi-membership collection of a different type
         visit '/dashboard/my/works'
         check 'check_all'
@@ -58,7 +55,7 @@ RSpec.describe 'Adding a work to multiple collections', type: :feature, clean_re
   end
 
   describe 'when both collections require single membership' do
-    let(:old_collection) { build(:collection_lw, user: admin_user, collection_type_gid: single_membership_type_1.gid, title: ['OldCollectionTitle']) }
+    let(:old_collection) { FactoryBot.build(:collection_lw, user: admin_user, collection_type: single_membership_type_1, title: ['OldCollectionTitle']) }
     let!(:work) do
       create(:generic_work,
              user: admin_user,
@@ -69,10 +66,9 @@ RSpec.describe 'Adding a work to multiple collections', type: :feature, clean_re
     end
 
     context 'and are of different types' do
-      let!(:new_collection) { create(:collection_lw, user: admin_user, collection_type_gid: single_membership_type_2.gid, title: ['NewCollectionTitle']) }
+      let!(:new_collection) { FactoryBot.create(:collection_lw, user: admin_user, collection_type: single_membership_type_2, title: ['NewCollectionTitle']) }
 
       it 'then the work is added to both collections' do
-        optional 'ability to get capybara to find css select2-result (see Issue #3038)' if ci_build?
         # Add to second single-membership collection of a different type
         visit '/dashboard/my/works'
         check 'check_all'
@@ -89,11 +85,10 @@ RSpec.describe 'Adding a work to multiple collections', type: :feature, clean_re
     end
 
     context 'and are of the same type' do
-      let!(:new_collection) { create(:collection_lw, user: admin_user, collection_type_gid: single_membership_type_1.gid, title: ['NewCollectionTitle']) }
+      let!(:new_collection) { FactoryBot.create(:collection_lw, user: admin_user, collection_type: single_membership_type_1, title: ['NewCollectionTitle']) }
 
       context 'then the work fails to add to the second collection' do
         it 'from the dashboard->works batch add to collection' do
-          optional 'ability to get capybara to find css select2-result (see Issue #3038)' if ci_build?
           # Attempt to add to second single-membership collection of the same type
           visit '/dashboard/my/works'
           check 'check_all'
@@ -119,9 +114,7 @@ RSpec.describe 'Adding a work to multiple collections', type: :feature, clean_re
 
           select_collection(new_collection)
           check('agreement')
-          sleep 3
           choose('generic_work_visibility_open')
-          sleep 3
 
           within('div#savewidget') do
             element = nil
@@ -163,11 +156,10 @@ RSpec.describe 'Adding a work to multiple collections', type: :feature, clean_re
     let!(:work) { create(:generic_work, user: admin_user, member_of_collections: [old_collection], title: ['The highly valued work that everyone wants in their collection']) }
 
     context 'allowing multi-membership' do
-      let(:old_collection) { create(:collection_lw, user: admin_user, collection_type_gid: multi_membership_type_1.gid, title: ['CollectionTitle']) }
+      let(:old_collection) { FactoryBot.create(:collection_lw, user: admin_user, collection_type: multi_membership_type_1, title: ['CollectionTitle']) }
       let!(:new_collection) { old_collection }
 
       it 'then the add is treated as a success' do
-        optional 'ability to get capybara to find css select2-result (see Issue #3038)' if ci_build?
         # Re-add to same multi-membership collection
         visit '/dashboard/my/works'
         check 'check_all'
@@ -184,11 +176,10 @@ RSpec.describe 'Adding a work to multiple collections', type: :feature, clean_re
     end
 
     context 'requiring single-membership' do
-      let(:old_collection) { create(:collection_lw, user: admin_user, collection_type_gid: single_membership_type_1.gid, title: ['CollectionTitle']) }
+      let(:old_collection) { FactoryBot.create(:collection_lw, user: admin_user, collection_type: single_membership_type_1, title: ['CollectionTitle']) }
       let!(:new_collection) { old_collection }
 
       it 'then the add is treated as a success' do
-        optional 'ability to get capybara to find css select2-result (see Issue #3038)' if ci_build?
         # Re-add to same single-membership collection
         visit '/dashboard/my/works'
         check 'check_all'

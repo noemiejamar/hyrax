@@ -23,7 +23,7 @@ module Hyrax
         # If the file set doesn't have a title or label assigned, set a default.
         file_set.label ||= label_for(file)
         file_set.title = [file_set.label] if file_set.title.blank?
-        @file_set = perform_save(file_set) # Need to save to get an id # TODO: change this to `save(file_set)` when fully valkyrized
+        @file_set = perform_save(file_set)
         return false unless file_set
         if from_url
           # If ingesting from URL, don't spawn an IngestJob; instead
@@ -47,7 +47,6 @@ module Hyrax
       def update_content(file, relation = :original_file)
         IngestJob.perform_later(wrapper!(file: file, relation: relation), notification: true)
       end
-
       # @!endgroup
 
       # Adds the appropriate metadata, visibility and relationships to file_set
@@ -138,7 +137,8 @@ module Hyrax
       end
 
       def build_file_actor(relation)
-        file_actor_class.new(file_set, relation, user, use_valkyrie: use_valkyrie)
+        fs = use_valkyrie ? file_set.valkyrie_resource : file_set
+        file_actor_class.new(fs, relation, user, use_valkyrie: use_valkyrie)
       end
 
       # uses create! because object must be persisted to serialize for jobs
@@ -185,20 +185,11 @@ module Hyrax
         work.save!
       end
 
-      # save a valkyrie resource returning false if FailedSaveError is raised
-      # TODO: Change calls to `#perform_save` to call `#save` instead when env passes resources instead of active fedora objects
-      def save(resource)
-        Hyrax.persister.save(resource: resource)
-      rescue FailedSaveError
-        false
-      end
-
       # switches between using valkyrie to save or active fedora to save
-      # TODO: Remove this method when env passes resources instead of active fedora objects
       def perform_save(object)
         obj_to_save = object_to_act_on(object)
         if valkyrie_object?(obj_to_save)
-          saved_resource = save(obj_to_save)
+          saved_resource = Hyrax.persister.save(resource: obj_to_save)
           # return the same type of object that was passed in
           saved_object_to_return = valkyrie_object?(object) ? saved_resource : Wings::ActiveFedoraConverter.new(resource: saved_resource).convert
         else
@@ -209,14 +200,12 @@ module Hyrax
       end
 
       # if passed a resource or if use_valkyrie==true, object to act on is the valkyrie resource
-      # TODO: Remove this method when env passes resources instead of active fedora objects
       def object_to_act_on(object)
         return object if valkyrie_object?(object)
         use_valkyrie ? object.valkyrie_resource : object
       end
 
       # determine if the object is a valkyrie resource
-      # TODO: Remove this method when env passes resources instead of active fedora objects
       def valkyrie_object?(object)
         object.is_a? Valkyrie::Resource
       end

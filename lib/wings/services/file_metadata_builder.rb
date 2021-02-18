@@ -1,13 +1,15 @@
 # frozen_string_literal: true
-# TODO: The file_metadata resource and the file_metadata_builder should be in Hyrax as they will be needed for non-wings valkyrie implementations too.
 
 module Wings
   # Stores a file and an associated Hyrax::FileMetadata
+  #
+  # @deprecated use `Hyrax.storage_adapter` instead
   class FileMetadataBuilder
     include Hyrax::Noid
 
     attr_reader :storage_adapter, :persister
     def initialize(storage_adapter:, persister:)
+      Deprecation.warn('This class is deprecated; use Wings::Valkyrie::Storage instead.')
       @storage_adapter = storage_adapter
       @persister = persister
     end
@@ -16,18 +18,20 @@ module Wings
     # @param file_metadata [Hyrax::FileMetadata] the metadata to represent the file
     # @param file_set [Valkyrie::Resouce, Hydra::Works::FileSet] the associated FileSet # TODO: WINGS - Remove Hydra::Works::FileSet as a potential type when valkyrization is complete.
     # @return [Hyrax::FileMetadata] the persisted metadata file_metadata that represents the file
+    #
+    # @deprecated use `Hyrax.storage_adapter` instead
     def create(io_wrapper:, file_metadata:, file_set:)
+      Deprecation.warn('Use storage_adapter.upload, Fedora creates a `FileMetadata` (describedBy) implictly. ' \
+                       'Query it with Hyrax.custom_queries.find_file_metadata_by(id: stored_file.id).')
       io_wrapper = build_file(io_wrapper, file_metadata.type)
-      file_set.save unless file_set.persisted?
-      file_metadata.id = ::Valkyrie::ID.new(assign_id)
-      file_metadata.file_set_id = file_set.id
       stored_file = storage_adapter.upload(file: io_wrapper,
                                            original_filename: io_wrapper.original_filename,
                                            content_type: io_wrapper.content_type,
-                                           resource: file_metadata,
-                                           resource_uri_transformer: Hyrax.config.resource_id_to_uri_transformer)
-      file_metadata.file_identifiers = [stored_file.id]
-      attach_file_metadata(file_metadata: file_metadata, file_set: file_set)
+                                           resource: file_set,
+                                           use: Array(file_metadata.type).first,
+                                           id_hint: assign_id)
+
+      Hyrax.custom_queries.find_file_metadata_by(id: stored_file.id)
     end
 
     # @param file_metadata [Hyrax::FileMetadata] the metadata to represent the file

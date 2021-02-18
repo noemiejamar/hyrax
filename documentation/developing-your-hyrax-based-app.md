@@ -25,12 +25,12 @@
 
 A Hyrax-based application includes lots of dependencies. We provide a [Docker image for getting started with your Hyrax-based application](/CONTAINERS.md#docker-image-for-hyrax-based-applications).
 
-_**TODO:** Write the instructions for generating a new Hyrax-based application using the Docker Image for Hyrax-based Applications._
-
 <aside><p><em><strong>Note:</em></strong> The Docker image describes the canonical dependencies. In a way, it is executable documentation. The following documentation is our best effort to transcribe that executable documentation into a narrative. In other words, this documentation may drift away from the Docker details.</p></aside>
 
+You can also try [Running Hyrax-based application in local VM](https://github.com/samvera/hyrax/wiki/Hyrax-Development-Guide#running-hyrax-based-application-in-local-vm) which uses Ubuntu.
+
 This document contains instructions specific to setting up an app with __Hyrax
-v3.0.0-rc2__. If you are looking for instructions on installing a different
+v3.0.0-rc3__. If you are looking for instructions on installing a different
 version, be sure to select the appropriate branch or tag from the drop-down
 menu above.
 
@@ -99,7 +99,7 @@ Hyrax supports Ruby 2.5, 2.6, and 2.7. When starting a new project, we recommend
 
 ## Redis
 
-[Redis](http://redis.io/) is a key-value store that Hyrax uses to provide activity streams on repository objects and users, and to prevent race conditions as a global mutex when modifying order-persisting objects.
+[Redis](http://redis.io/) is a key-value store that Hyrax uses to provide activity streams on repository objects and users, and helps when modifying order-persisting objects by managing multi-threaded actions on data (preventing race conditions as a global mutex).
 
 Starting up Redis will depend on your operating system, and may in fact already be started on your system. You may want to consult the [Redis documentation](http://redis.io/documentation) for help doing this.
 
@@ -109,14 +109,14 @@ Hyrax requires Rails 5. We recommend the latest Rails 5.2 release.
 
 ```
 # If you don't already have Rails at your disposal...
-gem install rails -v 5.2.4.3
+gem install rails -v 5.2.4.4
 ```
 
 ### JavaScript runtime
 
 Rails requires that you have a JavaScript runtime installed (e.g. nodejs or rubyracer). Either install nodejs or uncomment the `rubyracer` line in your Gemfile and run `bundle install` before running Hyrax's install generator.
 
-NOTE: nodejs is preinstalled on most Mac computers and doesn't require a gem.  To test if nodejs is already installed, execute `node -v` in the terminal and the version of nodejs will be displayed if it is installed.
+NOTE: [nodejs](https://nodejs.org/en/) is preinstalled on most Mac computers and doesn't require a gem.  To test if nodejs is already installed, execute `node -v` in the terminal and the version of nodejs will be displayed if it is installed.
 
 ## Creating a Hyrax-based app
 
@@ -125,7 +125,7 @@ NOTE: The steps need to be done in order to create a new Hyrax based app.
 Generate a new Rails application using the template.
 
 ```
-rails _5.2.4.3_ new my_app -m https://raw.githubusercontent.com/samvera/hyrax/v3.0.0-rc2/template.rb
+rails _5.2.4.4_ new my_app -m https://raw.githubusercontent.com/samvera/hyrax/v3.0.0-rc3/template.rb
 ```
 
 Generating a new Rails application using Hyrax's template above takes cares of a number of steps for you, including:
@@ -190,7 +190,7 @@ end
 **After** Fedora and Solr are running, create the default administrative set -- into which all works will be deposited unless assigned to other administrative sets -- by running the following command:
 
 ```
-bin/rails hyrax:default_admin_set:create
+rails hyrax:default_admin_set:create
 ```
 
 This command also makes sure that Hyrax's built-in workflows are loaded for your application and available for the default administrative set.
@@ -213,7 +213,7 @@ or
 rails generate hyrax:work MovingImage
 ```
 
-If your applications requires your work type to be namespaced, namespaces can be included in the by adding a slash to the model name which creates a new class called `MovingImage` within the `My` namespace:
+If your applications requires your work type to be namespaced, namespaces can be included by adding a slash to the model name which creates a new class called `MovingImage` within the `My` namespace:
 
 ```
 rails generate hyrax:work My/MovingImage

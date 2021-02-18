@@ -22,6 +22,10 @@ RSpec.describe Hyrax::WorksControllerBehavior, :clean_repo, type: :controller do
       .to receive(:registered_curation_concern_types)
       .and_return([work.model_name.name])
 
+    # note: we can't run jobs that rely on routes (i.e. those that send notifications)
+    # from here because of this stubbing. it's proabably best just to not do that
+    # anyway. if these tests depend on specific job behavior, they may be testing too
+    # much.
     controller.main_app.instance_variable_set(:@routes, main_app_routes)
     controller.main_app.instance_variable_set(:@helpers, main_app_routes.url_helpers)
   end
@@ -57,6 +61,81 @@ RSpec.describe Hyrax::WorksControllerBehavior, :clean_repo, type: :controller do
 
         expect(response)
           .to redirect_to paths.hyrax_test_simple_work_legacy_path(id: assigns(:curation_concern).id, locale: :en)
+      end
+
+      it 'sets current user as depositor' do
+        post :create, params: { test_simple_work: { title: 'comet in moominland' } }
+
+        expect(assigns[:curation_concern].depositor).to eq user.user_key
+      end
+
+      it 'grants edit permissions to current user (as depositor)' do
+        post :create, params: { test_simple_work: { title: 'comet in moominland' } }
+
+        expect(Hyrax::AccessControlList(assigns[:curation_concern]).permissions)
+          .to include(have_attributes(agent: user.user_key, mode: :edit))
+      end
+
+      it 'sets workflow state as "deposited"; uses default workflow' do
+        post :create, params: { test_simple_work: { title: 'comet in moominland' } }
+
+        expect(Sipity::Entity(assigns[:curation_concern]).workflow_state).to have_attributes(name: "deposited")
+      end
+
+      context 'when depositing as a proxy for (on_behalf_of) another user' do
+        let(:create_params) { { title: 'comet in moominland', on_behalf_of: target_user.user_key } }
+        let(:target_user) { FactoryBot.create(:user) }
+
+        it 'transfers depositor status to proxy target' do
+          expect { post :create, params: { test_simple_work: create_params } }
+            .to have_enqueued_job(ContentDepositorChangeEventJob)
+        end
+      end
+
+      context 'when setting visibility' do
+        let(:create_params) { { title: 'comet in moominland', visibility: 'open' } }
+
+        it 'can set work to public' do
+          post :create, params: { test_simple_work: create_params }
+
+          expect(assigns[:curation_concern]).to have_attributes(visibility: 'open')
+        end
+
+        it 'saves the visibility' do
+          post :create, params: { test_simple_work: create_params }
+
+          expect(Hyrax::AccessControlList(assigns[:curation_concern]).permissions)
+            .to include(have_attributes(mode: :read, agent: 'group/public'))
+        end
+      end
+
+      context 'and files' do
+        let(:uploads) { FactoryBot.create_list(:uploaded_file, 2, user: user) }
+
+        it 'attaches the files' do
+          params = { test_simple_work: { title: 'comet in moominland' },
+                     uploaded_files: uploads.map(&:id) }
+
+          get :create, params: params
+
+          expect(flash[:notice]).to be_html_safe
+          expect(flash[:notice]).to eq "Your files are being processed by Hyrax in the background. " \
+                                       "The metadata and access controls you specified are being applied. " \
+                                       "You may need to refresh this page to see these updates."
+          expect(assigns(:curation_concern)).to have_file_set_members(be_persisted, be_persisted)
+        end
+
+        let(:uploads) { FactoryBot.create_list(:uploaded_file, 2, user: user) }
+
+        it 'rejects files from another user' do
+          pending 'the controller (NOT the actor stack/transaction!) should validate that the uploader and current user are the same'
+          uploads << FactoryBot.create(:uploaded_file)
+          params = { test_simple_work: { title: 'comet in moominland' }, uploaded_files: uploads.map(&:id) }
+
+          get :create, params: params
+
+          expect(response.status).to eq 422
+        end
       end
 
       context 'with invalid form data' do
@@ -221,13 +300,7 @@ RSpec.describe Hyrax::WorksControllerBehavior, :clean_repo, type: :controller do
     end
 
     context 'when indexed as public' do
-      let(:index_document) do
-        Wings::ActiveFedoraConverter.convert(resource: work).to_solr.tap do |doc|
-          doc[Hydra.config.permissions.read.group] = 'public'
-        end
-      end
-
-      before { ActiveFedora::SolrService.add(index_document, softCommit: true) }
+      let(:work) { FactoryBot.valkyrie_create(:hyrax_work, :public, alternate_ids: [id], title: title) }
 
       it_behaves_like 'allows show access'
     end
@@ -235,13 +308,7 @@ RSpec.describe Hyrax::WorksControllerBehavior, :clean_repo, type: :controller do
     context 'when the user has read access' do
       include_context 'with a logged in user'
 
-      let(:index_document) do
-        Wings::ActiveFedoraConverter.convert(resource: work).to_solr.tap do |doc|
-          doc[Hydra.config.permissions.read.individual] = [user.user_key]
-        end
-      end
-
-      before { ActiveFedora::SolrService.add(index_document, softCommit: true) }
+      let(:work) { FactoryBot.valkyrie_create(:hyrax_work, alternate_ids: [id], title: title, read_users: [user]) }
 
       it_behaves_like 'allows show access'
     end
@@ -284,6 +351,35 @@ RSpec.describe Hyrax::WorksControllerBehavior, :clean_repo, type: :controller do
 
         expect(Hyrax.query_service.find_by(id: id))
           .to have_attributes title: contain_exactly('new title')
+      end
+
+      context 'and files' do
+        let(:uploads) { FactoryBot.create_list(:uploaded_file, 2, user: user) }
+
+        it 'attaches the files' do
+          params = { id: id, test_simple_work: { title: 'comet in moominland' },
+                     uploaded_files: uploads.map(&:id) }
+
+          get :update, params: params
+          expect(assigns(:curation_concern)).to have_file_set_members(be_persisted, be_persisted)
+        end
+      end
+
+      context 'and editing visibility' do
+        let(:update_params) { { title: 'new title', visibility: 'open' } }
+
+        it 'can make work public' do
+          patch :update, params: { id: id, test_simple_work: update_params }
+
+          expect(Hyrax::VisibilityReader.new(resource: assigns(:curation_concern)).read).to eq 'open'
+        end
+
+        it 'saves the visibility' do
+          patch :update, params: { id: id, test_simple_work: update_params }
+
+          expect(Hyrax::AccessControlList(assigns[:curation_concern]).permissions)
+            .to include(have_attributes(mode: :read, agent: 'group/public'))
+        end
       end
     end
   end

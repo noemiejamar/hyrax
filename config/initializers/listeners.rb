@@ -1,11 +1,14 @@
 # frozen_string_literal: true
 
 Hyrax.publisher.subscribe(Hyrax::Listeners::AclIndexListener.new)
+Hyrax.publisher.subscribe(Hyrax::Listeners::ActiveFedoraAclIndexListener.new)
 Hyrax.publisher.subscribe(Hyrax::Listeners::MetadataIndexListener.new)
 Hyrax.publisher.subscribe(Hyrax::Listeners::BatchNotificationListener.new)
 Hyrax.publisher.subscribe(Hyrax::Listeners::ObjectLifecycleListener.new)
 Hyrax.publisher.subscribe(Hyrax::Listeners::FileSetLifecycleListener.new)
 Hyrax.publisher.subscribe(Hyrax::Listeners::FileSetLifecycleNotificationListener.new)
+Hyrax.publisher.subscribe(Hyrax::Listeners::ProxyDepositListener.new)
+Hyrax.publisher.subscribe(Hyrax::Listeners::WorkflowListener.new)
 
 # Publish events from old style Hyrax::Callbacks to trigger the listeners
 # When callbacks are removed and replaced with direct event publication, drop these blocks

@@ -89,13 +89,14 @@ require 'wings/attribute_transformer'
 require 'wings/services/custom_queries/find_access_control'
 require 'wings/services/custom_queries/find_collections_by_type'
 require 'wings/services/custom_queries/find_file_metadata'
+require 'wings/services/custom_queries/find_ids_by_model'
 require 'wings/services/custom_queries/find_many_by_alternate_ids'
 require 'wings/valkyrizable'
 require 'wings/valkyrie/metadata_adapter'
 require 'wings/valkyrie/resource_factory'
 require 'wings/valkyrie/persister'
+require 'wings/valkyrie/storage'
 require 'wings/valkyrie/query_service'
-require 'wings/valkyrie/storage/active_fedora'
 
 Hydra::AccessControl.send(:define_method, :valkyrie_resource) do
   attrs = attributes.symbolize_keys

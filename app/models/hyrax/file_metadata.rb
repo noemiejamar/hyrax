@@ -34,16 +34,15 @@ module Hyrax
       module_function :uri_for
     end
 
-    attribute :file_identifiers, ::Valkyrie::Types::Set # id of the file stored by the storage adapter
+    attribute :file_identifier, Valkyrie::Types::ID # id of the file stored by the storage adapter
     attribute :alternate_ids, Valkyrie::Types::Set.of(Valkyrie::Types::ID) # id of the Hydra::PCDM::File which holds metadata and the file in ActiveFedora
     attribute :file_set_id, ::Valkyrie::Types::ID # id of parent file set resource
 
     # all remaining attributes are on AF::File metadata_node unless otherwise noted
     attribute :label, ::Valkyrie::Types::Set
-    attribute :original_filename, ::Valkyrie::Types::Set
+    attribute :original_filename, ::Valkyrie::Types::String
     attribute :mime_type, ::Valkyrie::Types::String.default(GENERIC_MIME_TYPE)
     attribute :type, ::Valkyrie::Types::Set.default([Use::ORIGINAL_FILE].freeze)
-    attribute :content, ::Valkyrie::Types::Set
 
     # attributes set by fits
     attribute :format_label, ::Valkyrie::Types::Set
@@ -140,8 +139,20 @@ module Hyrax
       file.valid?(size: size.first, digests: { sha256: checksum&.first&.sha256 })
     end
 
+    ##
+    # @deprecated get content from #file instead
+    #
+    # @return [#to_s]
+    def content
+      Deprecation.warn('This convienince method has been deprecated. ' \
+                       'Retrieve the file from the storage adapter instead.')
+      file.read
+    rescue Valkyrie::StorageAdapter::FileNotFound
+      ''
+    end
+
     def file
-      Hyrax.storage_adapter.find_by(id: file_identifiers.first)
+      Hyrax.storage_adapter.find_by(id: file_identifier)
     end
   end
 end

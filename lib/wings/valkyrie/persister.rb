@@ -1,6 +1,12 @@
 # frozen_string_literal: true
 module Wings
   module Valkyrie
+    ##
+    # A valkyrie persister that aims for data consistency/backwards compatibility with ActiveFedora.
+    #
+    # The guiding principle of design for this persister is that resources persisted with it should
+    # be directly readable by `Hydra::Works`-style ActiveFedora models. It aims to be as complete as
+    # possible as a Valkyrie Persister, given that limitation.
     class Persister
       attr_reader :adapter
       extend Forwardable
@@ -16,26 +22,19 @@ module Wings
       # @param [Valkyrie::Resource] resource
       # @return [Valkyrie::Resource] the persisted/updated resource
       def save(resource:)
-        return save_file(file_metadata: resource) if resource.is_a? Hyrax::FileMetadata
         af_object = resource_factory.from_resource(resource: resource)
 
         check_lock_tokens(af_object: af_object, resource: resource)
 
-        af_object.save!
+        # the #save! api differs between ActiveFedora::Base and ActiveFedora::File objects,
+        # if we get a falsey response, we expect we have a File that has failed to save due
+        # to empty content
+        af_object.save! ||
+          raise(FailedSaveError.new("#{af_object.class}#save! returned non-true. It might be missing required content.", obj: af_object))
+
         resource_factory.to_resource(object: af_object)
-      rescue ActiveFedora::RecordInvalid => err
+      rescue ActiveFedora::RecordInvalid, RuntimeError => err
         raise FailedSaveError.new(err.message, obj: af_object)
-      end
-
-      def save_file(file_metadata:)
-        # This is a no-op when the file is being created or updated through the FileActor.
-        # There may be other scenarios where something needs to happen here.
-        file_metadata
-
-        # TODO: potentially need to...
-        #   find existing af File
-        #   convert file_metadata resource into af File metadata
-        #   save af File
       end
 
       # Persists a resource using ActiveFedora

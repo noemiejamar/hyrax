@@ -4,6 +4,10 @@ require 'valkyrie/specs/shared_specs'
 require 'wings'
 
 RSpec.describe Wings::Valkyrie::Persister do
+  subject(:persister) { described_class.new(adapter: adapter) }
+  let(:adapter) { Wings::Valkyrie::MetadataAdapter.new }
+  let(:query_service) { adapter.query_service }
+
   context "When passing a Valkyrie::Resource converted from an ActiveFedora::Base" do
     before do
       module Hyrax::Test
@@ -23,9 +27,6 @@ RSpec.describe Wings::Valkyrie::Persister do
       Hyrax::Test.send(:remove_const, :Persister)
     end
 
-    subject(:persister) { described_class.new(adapter: adapter) }
-    let(:adapter) { Wings::Valkyrie::MetadataAdapter.new }
-    let(:query_service) { adapter.query_service }
     let(:af_resource_class) { Hyrax::Test::Persister::Book }
     let(:resource_class) { Wings::OrmConverter.to_valkyrie_resource_class(klass: af_resource_class) }
     let(:resource) { resource_class.new(title: ['Foo']) }
@@ -114,10 +115,44 @@ RSpec.describe Wings::Valkyrie::Persister do
     end
   end
 
+  context 'when passing a FileMetadata node' do
+    let(:resource) { Hyrax::FileMetadata.new }
+
+    it 'raises an error because AF declines to save files that do not have content' do
+      expect { persister.save(resource: resource) }
+        .to raise_error described_class::FailedSaveError
+    end
+
+    context 'and it corresponds to a File' do
+      let(:resource) { Hyrax::FileMetadata.new(id: file.id, file_identifier: file.id) }
+      let(:file) do
+        Hydra::PCDM::File.new.tap do |f|
+          f.content = "moomin\n"
+          f.save
+        end
+      end
+
+      it 'returns itself' do
+        expect(persister.save(resource: resource).id).to eq resource.id
+      end
+
+      it 'can update metadata' do
+        resource.bit_rate = ['1000']
+
+        expect { persister.save(resource: resource) }
+          .to change { Hydra::PCDM::File.find(file.id).bit_rate }
+          .to contain_exactly '1000'
+      end
+
+      it 'does not update existing content' do
+        persister.save(resource: resource)
+        file.reload
+        expect(file.content).to eq("moomin\n")
+      end
+    end
+  end
+
   context "When passing a Valkyrie::Resource that was never an ActiveFedora::Base" do
-    subject(:persister) { described_class.new(adapter: adapter) }
-    let(:adapter) { Wings::Valkyrie::MetadataAdapter.new }
-    let(:query_service) { adapter.query_service }
     before do
       class CustomResource < Hyrax::Resource
         attribute :title
@@ -147,7 +182,6 @@ RSpec.describe Wings::Valkyrie::Persister do
       Object.send(:remove_const, :Custom)
     end
 
-    subject { persister }
     let(:resource_class) { CustomResource }
     let(:resource) { resource_class.new }
 
@@ -219,35 +253,55 @@ RSpec.describe Wings::Valkyrie::Persister do
       expect(reloaded.title).to contain_exactly custom_rdf
     end
 
-    xit "can handle Date RDF properties" do
+    it "can handle Date RDF properties" do
+      pending 'ActiveFedora casts literals to Literal#object, where possible. '\
+              'Without an RDFLiteral in Valkyrie::Types to specify casting back, we ' \
+              "can't know what the model wants." # pending so if this passes, we fail CI
+
       date_rdf = RDF::Literal.new(Date.current)
       book = persister.save(resource: resource_class.new(title: [date_rdf]))
       reloaded = query_service.find_by(id: book.id)
       expect(reloaded.title).to contain_exactly date_rdf
     end
 
-    xit "can handle DateTime RDF properties" do
+    it "can handle DateTime RDF properties" do
+      pending 'ActiveFedora casts literals to Literal#object, where possible. '\
+              'Without an RDFLiteral in Valkyrie::Types to specify casting back, we ' \
+              "can't know what the model wants." # pending so if this passes, we fail CI
+
       datetime_rdf = RDF::Literal.new(DateTime.current)
       book = persister.save(resource: resource_class.new(title: [datetime_rdf]))
       reloaded = query_service.find_by(id: book.id)
       expect(reloaded.title).to contain_exactly datetime_rdf
     end
 
-    xit "can handle Decimal RDF properties" do
+    it "can handle Decimal RDF properties" do
+      pending 'ActiveFedora casts literals to Literal#object, where possible. '\
+              'Without an RDFLiteral in Valkyrie::Types to specify casting back, we ' \
+              "can't know what the model wants." # pending so if this passes, we fail CI
+
       decimal_rdf = RDF::Literal.new(BigDecimal(5.5, 10))
       book = persister.save(resource: resource_class.new(title: [decimal_rdf]))
       reloaded = query_service.find_by(id: book.id)
       expect(reloaded.title).to contain_exactly decimal_rdf
     end
 
-    xit "can handle Double RDF properties" do
+    it "can handle Double RDF properties" do
+      pending 'ActiveFedora casts literals to Literal#object, where possible. '\
+              'Without an RDFLiteral in Valkyrie::Types to specify casting back, we ' \
+              "can't know what the model wants." # pending so if this passes, we fail CI
+
       double_rdf = RDF::Literal.new(5.5)
       book = persister.save(resource: resource_class.new(title: [double_rdf]))
       reloaded = query_service.find_by(id: book.id)
       expect(reloaded.title).to contain_exactly double_rdf
     end
 
-    xit "can handle Integer RDF properties" do
+    it "can handle Integer RDF properties" do
+      pending 'ActiveFedora casts literals to Literal#object, where possible. '\
+              'Without an RDFLiteral in Valkyrie::Types to specify casting back, we ' \
+              "can't know what the model wants." # pending so if this passes, we fail CI
+
       int_rdf = RDF::Literal.new(17)
       book = persister.save(resource: resource_class.new(title: [int_rdf]))
       reloaded = query_service.find_by(id: book.id)
@@ -261,7 +315,11 @@ RSpec.describe Wings::Valkyrie::Persister do
       expect(reloaded.title).to contain_exactly "Test1", language_rdf
     end
 
-    xit "can handle Time RDF properties" do
+    it "can handle Time RDF properties" do
+      pending 'ActiveFedora casts literals to Literal#object, where possible. '\
+              'Without an RDFLiteral in Valkyrie::Types to specify casting back, we ' \
+              "can't know what the model wants." # pending so if this passes, we fail CI
+
       time_rdf = RDF::Literal.new(Time.current)
       book = persister.save(resource: resource_class.new(title: [time_rdf]))
       reloaded = query_service.find_by(id: book.id)
@@ -305,7 +363,7 @@ RSpec.describe Wings::Valkyrie::Persister do
       expect(reloaded.title).to contain_exactly RDF::URI("http://example.com")
     end
 
-    xit "can store Valkyrie::IDs" do
+    it "can store Valkyrie::IDs" do
       shared_title = persister.save(resource: resource_class.new)
       book = persister.save(resource: resource_class.new(title: [shared_title.id, Valkyrie::ID.new("adapter://1"), "test"]))
       reloaded = query_service.find_by(id: book.id)
@@ -357,7 +415,6 @@ RSpec.describe Wings::Valkyrie::Persister do
     # internal_resource="Wings::ActiveFedoraConverter::DefaultWork"
     # so the CustomResource defined above will not be persisted as such.
     it "can find that resource again" do
-      Wings::ModelRegistry.register(resource_class, Custom)
       id = persister.save(resource: resource).id
       item = query_service.find_by(id: id)
       expect(item).to be_kind_of resource_class

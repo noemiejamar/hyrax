@@ -54,9 +54,29 @@ FactoryBot.define do
       end
     end
 
+    trait :with_admin_set do
+      transient do
+        admin_set { valkyrie_create(:hyrax_admin_set) }
+      end
+
+      after(:build) do |work, evaluator|
+        work.admin_set_id = evaluator.admin_set&.id
+      end
+    end
+
+    trait :with_default_admin_set do
+      admin_set_id { Hyrax::EnsureWellFormedAdminSetService.call }
+    end
+
     trait :with_member_works do
       transient do
         members { [valkyrie_create(:hyrax_work), valkyrie_create(:hyrax_work)] }
+      end
+    end
+
+    trait :with_member_file_sets do
+      transient do
+        members { [valkyrie_create(:hyrax_file_set), valkyrie_create(:hyrax_file_set)] }
       end
     end
 

@@ -26,6 +26,8 @@ module Sipity
                Entity(input.model)
              when Sipity::Comment
                Entity(input.entity)
+             when Valkyrie::Resource
+               Entity(Hyrax::GlobalID(input))
              else
                Entity(input.to_global_id) if input.respond_to?(:to_global_id)
              end
@@ -80,6 +82,10 @@ module Sipity
     handle_conversion(input, result, :to_sipity_workflow_state, &block)
   end
   module_function :WorkflowState
+
+  ##
+  # A parent error class for all workflow errors caused by bad state
+  class StateError < RuntimeError; end
 
   class ConversionError < PowerConverter::ConversionError
     def initialize(value, **options)

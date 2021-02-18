@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 require 'wings/converter_value_mapper'
+require 'wings/active_fedora_converter/default_work'
+require 'wings/active_fedora_converter/nested_resource'
 
 module Wings
   ##
@@ -14,7 +16,7 @@ module Wings
   #
   # @note the `Valkyrie::Resource` object passed to this class **must** have an
   #   `#internal_resource` mapping it to an `ActiveFedora::Base` class.
-  class ActiveFedoraConverter # rubocop:disable Metrics/ClassLength
+  class ActiveFedoraConverter
     ##
     # Accesses the Class implemented for handling resource attributes
     # @return [Class]
@@ -62,18 +64,14 @@ module Wings
     ##
     # @return [ActiveFedora::Base]
     def convert
-      active_fedora_class.new(normal_attributes).tap do |af_object|
-        af_object.id = id unless id.empty?
-        normal_attributes.each_key { |key| af_object.send(:attribute_will_change!, key) }
-        add_access_control_attributes(af_object)
-        convert_members(af_object)
-        convert_member_of_collections(af_object)
-        convert_files(af_object)
+      instance.tap do |af_object|
+        af_object.id ||= id unless id.empty?
+        apply_attributes_to_model(af_object)
       end
     end
 
     def active_fedora_class
-      @active_fedora_class ||=
+      @active_fedora_class ||= # cache the class at the instance level
         begin
           klass = begin
                     resource.internal_resource.constantize
@@ -81,7 +79,7 @@ module Wings
                     Wings::ActiveFedoraClassifier.new(resource.internal_resource).best_model
                   end
 
-          return klass if klass <= ActiveFedora::Base
+          return klass if klass <= ActiveFedora::Common
 
           ModelRegistry.lookup(klass)
         end
@@ -99,113 +97,16 @@ module Wings
       resource.alternate_ids.first.to_s
     end
 
-    def self.DefaultWork(resource_class)
-      class_cache[resource_class] ||= Class.new(DefaultWork) do
-        self.valkyrie_class = resource_class
-
-        # extract AF properties from the Valkyrie schema;
-        # skip reserved attributes, proctected properties, and those already defined
-        resource_class.schema.each do |schema_key|
-          next if resource_class.reserved_attributes.include?(schema_key.name)
-          next if protected_property_name?(schema_key.name)
-          next if properties.keys.include?(schema_key.name.to_s)
-
-          property schema_key.name, predicate: RDF::URI("http://hyrax.samvera.org/ns/wings##{schema_key.name}")
-        end
-
-        # nested attributes in AF don't inherit! this needs to be here until we can drop it completely.
-        accepts_nested_attributes_for :nested_resource
-      end
-    end
-
-    ##
-    # A base model class for valkyrie resources that don't have corresponding
-    # ActiveFedora::Base models.
-    class DefaultWork < ActiveFedora::Base
-      include Hyrax::WorkBehavior
-      property :nested_resource, predicate: ::RDF::URI("http://example.com/nested_resource"), class_name: "Wings::ActiveFedoraConverter::NestedResource"
-
-      class_attribute :valkyrie_class
-      self.valkyrie_class = Hyrax::Resource
-
-      class << self
-        delegate :human_readable_type, to: :valkyrie_class
-
-        def model_name(*)
-          _hyrax_default_name_class.new(valkyrie_class)
-        end
-
-        def to_rdf_representation
-          "Wings(#{valkyrie_class})"
-        end
-        alias inspect to_rdf_representation
-        alias to_s inspect
-      end
-
-      def to_global_id
-        GlobalID.create(valkyrie_class.new(id: id))
-      end
-    end
-
-    class NestedResource < ActiveTriples::Resource
-      property :title, predicate: ::RDF::Vocab::DC.title
-      property :author, predicate: ::RDF::URI('http://example.com/ns/author')
-      property :depositor, predicate: ::RDF::URI('http://example.com/ns/depositor')
-      property :nested_resource, predicate: ::RDF::URI("http://example.com/nested_resource"), class_name: NestedResource
-      property :ordered_authors, predicate: ::RDF::Vocab::DC.creator
-      property :ordered_nested, predicate: ::RDF::URI("http://example.com/ordered_nested")
-
-      def initialize(uri = RDF::Node.new, _parent = ActiveTriples::Resource.new)
-        uri = if uri.try(:node?)
-                RDF::URI("#nested_resource_#{uri.to_s.gsub('_:', '')}")
-              elsif uri.to_s.include?('#')
-                RDF::URI(uri)
-              end
-        super
-      end
-
-      include ::Hyrax::BasicMetadata
-    end
-
     private
+
+    def instance
+      id.present? ? active_fedora_class.find(id) : active_fedora_class.new
+    rescue ActiveFedora::ObjectNotFoundError
+      active_fedora_class.new
+    end
 
     def attributes_class
       self.class.attributes_class
-    end
-
-    def convert_members(af_object)
-      return unless resource.respond_to?(:member_ids) && resource.member_ids
-      # TODO: It would be better to find a way to add the members without resuming all the member AF objects
-      af_object.ordered_members = resource.member_ids.map { |valkyrie_id| ActiveFedora::Base.find(valkyrie_id.to_s) }
-    end
-
-    def convert_member_of_collections(af_object)
-      return unless resource.respond_to?(:member_of_collection_ids) && resource.member_of_collection_ids
-      # TODO: It would be better to find a way to set the parent collections without resuming all the collection AF objects
-      af_object.member_of_collections = resource.member_of_collection_ids.map { |valkyrie_id| ActiveFedora::Base.find(valkyrie_id.to_s) }
-    end
-
-    def convert_files(af_object)
-      return unless resource.respond_to? :file_ids
-
-      af_object.files = resource.file_ids.map do |fid|
-        next if fid.blank?
-        pcdm_file = Hydra::PCDM::File.new(fid.id)
-        assign_association_target(af_object, pcdm_file)
-      end.compact
-    end
-
-    def assign_association_target(af_object, pcdm_file)
-      case pcdm_file.metadata_node.type
-      when ->(types) { types.include?(RDF::URI.new('http://pcdm.org/use#OriginalFile')) }
-        af_object.association(:original_file).target = pcdm_file
-      when ->(types) { types.include?(RDF::URI.new('http://pcdm.org/use#ExtractedText')) }
-        af_object.association(:extracted_text).target = pcdm_file
-      when ->(types) { types.include?(RDF::URI.new('http://pcdm.org/use#Thumbnail')) }
-        af_object.association(:thumbnail).target = pcdm_file
-      else
-        pcdm_file
-      end
     end
 
     # Normalizes the attributes parsed from the resource
@@ -227,21 +128,38 @@ module Wings
       end
     end
 
+    ##
+    # apply attributes to the ActiveFedora model
+    def apply_attributes_to_model(af_object)
+      case af_object
+      when Hydra::AccessControl
+        add_access_control_attributes(af_object)
+      when ActiveFedora::File
+        add_file_attributes(af_object)
+      else
+        converted_attrs = normal_attributes
+        members = Array.wrap(converted_attrs.delete(:members))
+        files = converted_attrs.delete(:files)
+        af_object.attributes = converted_attrs
+        members.empty? ? af_object.try(:ordered_members)&.clear : af_object.try(:ordered_members=, members)
+        af_object.try(:members)&.replace(members)
+        af_object.files.build_or_set(files) if files
+      end
+    end
+
     # Add attributes from resource which aren't AF properties into af_object
     def add_access_control_attributes(af_object)
-      return unless af_object.is_a? Hydra::AccessControl
-      cache = af_object.permissions.to_a
+      normal_attributes[:permissions].each { |p| p.access_to_id = resource.access_to&.id }
+      af_object.permissions = normal_attributes[:permissions]
+    end
 
-      # if we've saved this before, it has a cache that won't clear
-      # when setting permissions! we need to reset it manually and
-      # rewrite with the values already in there, or saving will fail
-      # to delete cached items
-      af_object.permissions.reset if af_object.persisted?
-
-      af_object.permissions = cache.map do |permission|
-        permission.access_to_id = resource.try(:access_to)&.id
-        permission
-      end
+    # for files, add attributes to metadata_node, plus some other work
+    def add_file_attributes(af_object)
+      af_object.metadata_node.attributes = normal_attributes
+      af_object.original_name = resource.original_filename
+      new_type = (resource.type - af_object.metadata_node.type.to_a).first
+      af_object.metadata_node.type = new_type if new_type
+      af_object.mime_type = resource.mime_type
     end
   end
 end

@@ -40,6 +40,19 @@ module Hyrax
     autoload :Listeners
   end
 
+  ##
+  # @return [GlobalID]
+  # @see https://github.com/rails/globalid
+  def self.GlobalID(input) # rubocop:disable Naming/MethodName
+    case input
+    when Valkyrie::Resource
+      ValkyrieGlobalIdProxy.new(resource: input).to_global_id
+    else
+      input.to_global_id if input.respond_to?(:to_global_id)
+    end
+  end
+
+  ##
   # @api public
   #
   # Exposes the Hyrax configuration

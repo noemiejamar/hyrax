@@ -187,7 +187,7 @@ Hyrax.config do |config|
   # Location on local file system where uploaded files will be staged
   # prior to being ingested into the repository or having derivatives generated.
   # If you use a multi-server architecture, this MUST be a shared volume.
-  # config.working_path = Rails.root.join( 'tmp', 'uploads')
+  # config.working_path = Rails.root.join('tmp', 'uploads')
 
   # Should the media display partial render a download link?
   # config.display_media_download_link = true
@@ -232,11 +232,6 @@ Hyrax.config do |config|
   # config.translate_uri_to_id = lambda do |id|
   #                                "#{ActiveFedora.fedora.host}#{ActiveFedora.fedora.base_path}/#{Noid::Rails.treeify(id)}"
   #                              end
-  # config.resource_id_to_uri_transformer = lambda do |resource, base_url|
-  #                                           file_id = CGI.escape(resource.file_identifiers.first.to_s)
-  #                                           fs_id = CGI.escape(resource.file_set_id.to_s)
-  #                                           "#{base_url}#{::Noid::Rails.treeify(fs_id)}/files/#{file_id}"
-  #                                         end
 
   # When your application is ready to use the valkyrie index instead of the one
   # maintained by active fedora, you will need to set this to true. You will

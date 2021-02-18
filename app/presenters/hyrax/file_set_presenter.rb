@@ -83,6 +83,8 @@ module Hyrax
       Hyrax::FixityStatusPresenter.new(id).render_file_set_status
     end
 
+    ##
+    # @return [WorkShowPresenter, nil] +nil+ if no parent can be found
     def parent
       @parent_presenter ||= fetch_parent_presenter
     end
@@ -100,6 +102,7 @@ module Hyrax
     def fetch_parent_presenter
       ids = Hyrax::SolrService.query("{!field f=member_ids_ssim}#{id}", fl: Hyrax.config.id_field)
                               .map { |x| x.fetch(Hyrax.config.id_field) }
+      Hyrax.logger.warn("Couldn't find a parent work for FileSet: #{id}.") if ids.empty?
       Hyrax::PresenterFactory.build_for(ids: ids,
                                         presenter_class: WorkShowPresenter,
                                         presenter_args: current_ability).first

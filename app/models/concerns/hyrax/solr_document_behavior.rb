@@ -1,5 +1,17 @@
 # frozen_string_literal: true
 module Hyrax
+  ##
+  # @api public
+  #
+  # Hyrax extensions for +Blacklight+'s generated +SolrDocument+.
+  #
+  # @example using with +Blacklight::Solr::Document+
+  #   class SolrDocument
+  #     include Blacklight::Solr::Document
+  #     include Hyrax::SolrDocumentBehavior
+  #   end
+  #
+  # @see https://github.com/projectblacklight/blacklight/wiki/Understanding-Rails-and-Blacklight#models
   module SolrDocumentBehavior
     extend ActiveSupport::Concern
     include Hydra::Works::MimeTypes
@@ -27,28 +39,47 @@ module Hyrax
       title_or_label.to_s
     end
 
+    ##
+    # Given a model class and an +id+, provides +ActiveModel+ style model methods.
+    #
+    # @note access this via {SolrDocumentBehavior#to_model}.
     class ModelWrapper
+      ##
+      # @api private
+      #
+      # @param [Class] model
+      # @param [String, nil] id
       def initialize(model, id)
         @model = model
         @id = id
       end
 
+      ##
+      # @api public
       def persisted?
         true
       end
 
+      ##
+      # @api public
       def to_param
         @id
       end
 
+      ##
+      # @api public
       def model_name
         @model.model_name
       end
 
+      ##
+      # @api public
       def to_partial_path
         @model._to_partial_path
       end
 
+      ##
+      # @api public
       def to_global_id
         URI::GID.build app: GlobalID.app, model_name: model_name.name, model_id: @id
       end
@@ -81,8 +112,9 @@ module Hyrax
     end
 
     # Method to return the model
-    def hydra_model
-      "::#{first('has_model_ssim')}".safe_constantize
+    def hydra_model(classifier: ActiveFedora.model_mapper)
+      "::#{first('has_model_ssim')}".safe_constantize ||
+        classifier.classifier(self).best_model
     end
 
     def depositor(default = '')
@@ -110,7 +142,7 @@ module Hyrax
     end
 
     def collection_type_gid
-      first('collection_type_gid_ssim')
+      first(Hyrax.config.collection_type_index_field)
     end
   end
 end

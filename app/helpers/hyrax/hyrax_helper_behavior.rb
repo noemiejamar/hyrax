@@ -19,7 +19,7 @@ module Hyrax
     include Hyrax::WorkFormHelper
 
     # Which translations are available for the user to select
-    # @return [Hash<String,String>] locale abbreviations as keys and flags as values
+    # @return [Hash{String => String}] locale abbreviations as keys and flags as values
     def available_translations
       {
         'de' => 'Deutsch',
@@ -128,7 +128,7 @@ module Hyrax
     # A Blacklight helper_method
     # @param options [Hash{Symbol=>Object}] Blacklight sends :document, :field, :config, :value and whatever else was in options
     # @option options [Array{String}] :value
-    # @option options [Hash] :config including {:field_name => "my_name"}
+    # @option options [Hash] :config including +{:field_name => "my_name"}+
     # @option options [Hash] :document
     # @option options [Array{String}] :value the strings you might otherwise have passed to this method singly
     # @return [ActiveSupport::SafeBuffer] the html_safe link
@@ -175,7 +175,6 @@ module Hyrax
     # @option field [Array] :value array of values for the field
     # @param show_link [Boolean]
     # @return [ActiveSupport::SafeBuffer]
-    # @todo stop being a helper_method, start being part of the Blacklight render stack?
     def iconify_auto_link(field, show_link = true)
       if field.is_a? Hash
         options = field[:config].separator_options || {}

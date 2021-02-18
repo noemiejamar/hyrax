@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 ActiveFedora::Base.include Wings::Valkyrizable
+ActiveFedora::File.include Wings::Valkyrizable
 
 module ActiveTriples
   class NodeConfig
@@ -29,6 +30,36 @@ module ActiveFedora
         reflections.key?(property.to_sym)
     end
   end
+
+  class File
+    alias eql? ==
+
+    def self.supports_property?(property)
+      properties.key?(property.to_s)
+    end
+
+    def self.properties
+      metadata.properties
+    end
+  end
+
+  module Associations
+    class ContainerProxy
+      delegate :build_or_set, to: :@association
+    end
+
+    class ContainsAssociation
+      def build_or_set(attributes, &block)
+        if attributes.is_a?(Array)
+          attributes.collect { |attr| build_or_set(attr, &block) }
+        else
+          add_to_target(reflection.build_association(attributes)) do |record|
+            yield(record) if block_given?
+          end
+        end
+      end
+    end
+  end
 end
 
 Valkyrie::MetadataAdapter.register(
@@ -37,9 +68,7 @@ Valkyrie::MetadataAdapter.register(
 Valkyrie.config.metadata_adapter = :wings_adapter
 
 Valkyrie::StorageAdapter.register(
-  Wings::Storage::ActiveFedora
-    .new(connection: Ldp::Client.new(ActiveFedora.fedora.host), base_path: ActiveFedora.fedora.base_path),
-  :active_fedora
+  Wings::Valkyrie::Storage.new, :active_fedora
 )
 Valkyrie.config.storage_adapter = :active_fedora
 
@@ -53,6 +82,7 @@ custom_queries = [Hyrax::CustomQueries::Navigators::CollectionMembers,
                   Wings::CustomQueries::FindAccessControl, # override Hyrax::CustomQueries::FindAccessControl
                   Wings::CustomQueries::FindCollectionsByType,
                   Wings::CustomQueries::FindFileMetadata, # override Hyrax::CustomQueries::FindFileMetadata
+                  Wings::CustomQueries::FindIdsByModel,
                   Wings::CustomQueries::FindManyByAlternateIds] # override Hyrax::CustomQueries::FindManyByAlternateIds
 custom_queries.each do |query_handler|
   Valkyrie.config.metadata_adapter.query_service.custom_queries.register_query_handler(query_handler)
@@ -64,3 +94,4 @@ Wings::ModelRegistry.register(Hyrax::PcdmCollection,    ::Collection)
 Wings::ModelRegistry.register(Hyrax::FileSet,           FileSet)
 Wings::ModelRegistry.register(Hyrax::Embargo,           Hydra::AccessControls::Embargo)
 Wings::ModelRegistry.register(Hyrax::Lease,             Hydra::AccessControls::Lease)
+Wings::ModelRegistry.register(Hyrax::FileMetadata,      Hydra::PCDM::File)

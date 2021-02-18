@@ -4,6 +4,23 @@ module Hyrax
   ##
   # @api public
   #
+  # Cast an object to its AccessControlList
+  #
+  # @param [Object] an object to try to cast
+  #
+  # @return [Hyrax::AccessControlList]
+  def self.AccessControlList(obj)
+    case obj
+    when AccessControlList
+      obj
+    else
+      AccessControlList.new(resource: obj)
+    end
+  end
+
+  ##
+  # @api public
+  #
   # ACLs for `Hyrax::Resource` models
   #
   # Allows managing `Hyrax::Permission` entries referring to a specific
@@ -51,6 +68,19 @@ module Hyrax
       self.resource  = resource
       @persister     = persister
       @query_service = query_service
+    end
+
+    ##
+    # Copy and save permissions from source to target
+    #
+    # @param [Valkyrie::Resource, Hyrax::AccessControlList] source
+    # @param [Valkyrie::Resource, Hyrax::AccessControlList] target
+    #
+    # @return [Hyrax::AccessControlList] an acl for `target` with the updated permissions
+    def self.copy_permissions(source:, target:)
+      target = Hyrax::AccessControlList(target)
+      target.permissions = Hyrax::AccessControlList(source).permissions
+      target.save && target
     end
 
     ##
@@ -112,7 +142,8 @@ module Hyrax
     #
     # @return [Array<Hyrax::Permission>]
     def permissions=(new_permissions)
-      change_set.permissions = new_permissions.to_a
+      change_set.permissions = []
+      new_permissions.each { |p| self << p }
     end
 
     ##
@@ -156,7 +187,7 @@ module Hyrax
 
       private
 
-      def id_for(agent: user_or_group)
+      def id_for(agent:)
         case agent
         when Hyrax::Group
           "#{Hyrax::Group.name_prefix}#{agent.name}"

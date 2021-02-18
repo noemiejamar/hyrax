@@ -11,11 +11,12 @@ module Hyrax
       with_themed_layout :decide_layout
       copy_blacklight_config_from(::CatalogController)
 
-      class_attribute :_curation_concern_type, :show_presenter, :work_form_service, :search_builder_class, :iiif_manifest_builder
+      class_attribute :_curation_concern_type, :show_presenter, :work_form_service, :search_builder_class
+      class_attribute :iiif_manifest_builder, instance_accessor: false
       self.show_presenter = Hyrax::WorkShowPresenter
       self.work_form_service = Hyrax::WorkFormService
       self.search_builder_class = WorkSearchBuilder
-      self.iiif_manifest_builder = (Flipflop.cache_work_iiif_manifest? ? Hyrax::CachingIiifManifestBuilder.new : Hyrax::ManifestBuilderService.new)
+      self.iiif_manifest_builder = nil
       attr_accessor :curation_concern
       helper_method :curation_concern, :contextual_path
 
@@ -142,12 +143,13 @@ module Hyrax
     private
 
     def iiif_manifest_builder
-      self.class.iiif_manifest_builder
+      self.class.iiif_manifest_builder ||
+        (Flipflop.cache_work_iiif_manifest? ? Hyrax::CachingIiifManifestBuilder.new : Hyrax::ManifestBuilderService.new)
     end
 
     def iiif_manifest_presenter
       IiifManifestPresenter.new(search_result_document(id: params[:id])).tap do |p|
-        p.hostname = request.hostname
+        p.hostname = request.base_url
         p.ability = current_ability
       end
     end
@@ -187,8 +189,12 @@ module Hyrax
       else
         form = build_form
 
-        @curation_concern = form.validate(params[hash_key_for_curation_concern]) &&
-                            transactions['change_set.create_work'].call(form).value!
+        @curation_concern =
+          form.validate(params[hash_key_for_curation_concern]) &&
+          transactions['change_set.create_work']
+          .with_step_args('work_resource.add_file_sets' => { uploaded_files: uploaded_files },
+                          'change_set.set_user_as_depositor' => { user: current_user })
+          .call(form).value!
       end
     end
 
@@ -199,8 +205,11 @@ module Hyrax
       else
         form = build_form
 
-        @curation_concern = form.validate(params[hash_key_for_curation_concern]) &&
-                            transactions['change_set.update_work'].call(form).value!
+        @curation_concern =
+          form.validate(params[hash_key_for_curation_concern]) &&
+          transactions['change_set.update_work']
+          .with_step_args('work_resource.add_file_sets' => { uploaded_files: uploaded_files })
+          .call(form).value!
       end
     end
 
@@ -242,37 +251,37 @@ module Hyrax
       search_result_document(search_params)
     end
 
+    ##
     # Only returns unsuppressed documents the user has read access to
     #
     # @api public
     #
     # @param search_params [ActionController::Parameters] this should
-    # include an :id key, but based on implementation and use of the
-    # WorkSearchBuilder, it need not.
+    #   include an :id key, but based on implementation and use of the
+    #   WorkSearchBuilder, it need not.
     #
     # @return [SolrDocument]
     #
-    #
     # @raise [WorkflowAuthorizationException] when the object is not
-    # found via the search builder's search logic BUT the object is
-    # suppressed AND the user can read it (Yeah, it's confusing but
-    # after a lot of debugging that's the logic)
+    #   found via the search builder's search logic BUT the object is
+    #   suppressed AND the user can read it (Yeah, it's confusing but
+    #   after a lot of debugging that's the logic)
     #
     # @raise [CanCan::AccessDenied] when the object is not found via
-    # the search builder's search logic BUT the object is not
-    # supressed OR not readable by the user (Yeah.)
-
-    # @note This is Jeremy, I have suspicions about the first line of
-    #       this comment (eg, "Only return unsuppressed...").  The
-    #       reason is that I've encounter situations in the specs
-    #       where the document_list is empty but if I then query Solr
-    #       for the object by ID, I get a document that is NOT
-    #       suppressed AND can be read.  In other words, I believe
-    #       there is more going on in the search_results method
-    #       (e.g. a filter is being applied that is beyond what the
-    #       comment indicates)
+    #   the search builder's search logic BUT the object is not
+    #   supressed OR not readable by the user (Yeah.)
     #
-    # @see {#document_not_found!}
+    # @note This is Jeremy, I have suspicions about the first line of
+    #   this comment (eg, "Only return unsuppressed...").  The
+    #   reason is that I've encounter situations in the specs
+    #   where the document_list is empty but if I then query Solr
+    #   for the object by ID, I get a document that is NOT
+    #   suppressed AND can be read.  In other words, I believe
+    #   there is more going on in the search_results method
+    #   (e.g. a filter is being applied that is beyond what the
+    #   comment indicates)
+    #
+    # @see #document_not_found!
     def search_result_document(search_params)
       _, document_list = search_results(search_params)
       return document_list.first unless document_list.empty?
@@ -361,10 +370,8 @@ module Hyrax
     end
 
     def after_update_response
-      if curation_concern.file_sets.present?
-        return redirect_to hyrax.confirm_access_permission_path(curation_concern) if permissions_changed?
-        return redirect_to main_app.confirm_hyrax_permission_path(curation_concern) if curation_concern.visibility_changed?
-      end
+      return redirect_to hyrax.confirm_access_permission_path(curation_concern) if permissions_changed? && concern_has_file_sets?
+
       respond_to do |wants|
         wants.html { redirect_to [main_app, curation_concern], notice: "Work \"#{curation_concern}\" successfully updated." }
         wants.json { render :show, status: :ok, location: polymorphic_path([main_app, curation_concern]) }
@@ -397,7 +404,26 @@ module Hyrax
     end
 
     def permissions_changed?
-      @saved_permissions != curation_concern.permissions.map(&:to_hash)
+      @saved_permissions !=
+        case curation_concern
+        when ActiveFedora::Base
+          curation_concern.permissions.map(&:to_hash)
+        else
+          Hyrax::AccessControl.for(resource: curation_concern).permissions
+        end
+    end
+
+    def concern_has_file_sets?
+      case curation_concern
+      when ActiveFedora::Common
+        curation_concern.file_sets.present?
+      else
+        Hyrax.custom_queries.find_child_fileset_ids(resource: curation_concern).any?
+      end
+    end
+
+    def uploaded_files
+      UploadedFile.find(params.fetch(:uploaded_files, []))
     end
   end
 end

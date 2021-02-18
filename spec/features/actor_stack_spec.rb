@@ -27,6 +27,13 @@ RSpec.describe Hyrax::DefaultMiddlewareStack, :clean_repo do
         .to true
     end
 
+    it 'starts the workflow, carries out first action' do
+      actor.create(env)
+
+      expect(Sipity::Entity(env.curation_concern).workflow_state)
+        .to have_attributes name: 'deposited'
+    end
+
     context 'when adding to a work' do
       let(:other_work) { FactoryBot.create(:work, user: user) }
       let(:attributes) { { 'in_works_ids' => [other_work.id] } }
@@ -125,6 +132,20 @@ RSpec.describe Hyrax::DefaultMiddlewareStack, :clean_repo do
         expect(work.class.find(work.id).embargo_release_date).to be_present
       end
     end
+
+    describe 'when doing a proxy deposit' do
+      let(:target_user) { FactoryBot.create(:user) }
+      let(:attributes) do
+        { title: ['comet in moominland'],
+          on_behalf_of: target_user.user_key }
+      end
+
+      it 'enqueues exactly one ContentDepositorChangeEventJob' do
+        expect { actor.create(env) }
+          .to have_enqueued_job(ContentDepositorChangeEventJob)
+          .exactly(:once)
+      end
+    end
   end
 
   describe '#update' do
@@ -143,6 +164,20 @@ RSpec.describe Hyrax::DefaultMiddlewareStack, :clean_repo do
           .to change { work.class.find(work.id).embargo_release_date.strftime("%Y-%m-%d") }
           .from(previous_embargo_date.strftime("%Y-%m-%d"))
           .to(new_embargo_date.strftime("%Y-%m-%d"))
+      end
+    end
+  end
+
+  describe '#destroy' do
+    context 'when the work is featured' do
+      let(:work) { FactoryBot.create(:work) }
+
+      before { FeaturedWork.create(work_id: work.id) }
+
+      it 'deletes featured status' do
+        expect { actor.destroy(env) }
+          .to change { FeaturedWork.where(work_id: work.id).count }
+          .from(1).to(0)
       end
     end
   end
